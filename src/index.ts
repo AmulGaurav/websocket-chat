@@ -9,14 +9,44 @@ const wss = new WebSocket.Server({ server });
 
 let userCount = 0;
 
-wss.on("connection", (ws) => {
-  interface CustomWebSocket extends WebSocket {
-    id: string;
+// Rate limiting configuration
+const MAX_TOKENS = 5;
+const REFILL_RATE = 1; // tokens per second
+const REFILL_INTERVAL = 1000; // 1 second in milliseconds
+
+interface CustomWebSocket extends WebSocket {
+  id: string;
+  tokens: number;
+  lastRefill: number;
+}
+
+function refillTokens(ws: CustomWebSocket) {
+  const now = Date.now();
+  const timePassed = now - ws.lastRefill;
+  const tokensToAdd = Math.floor(timePassed / REFILL_INTERVAL) * REFILL_RATE;
+
+  ws.tokens = Math.min(MAX_TOKENS, ws.tokens + tokensToAdd);
+  ws.lastRefill = now;
+}
+
+function canSendMessage(ws: CustomWebSocket): boolean {
+  refillTokens(ws);
+
+  if (ws.tokens > 0) {
+    ws.tokens--;
+    return true;
   }
 
+  return false;
+}
+
+wss.on("connection", (ws) => {
   userCount++;
   const customWs = ws as CustomWebSocket;
   customWs.id = Math.random().toString(36);
+  customWs.tokens = MAX_TOKENS;
+  customWs.lastRefill = Date.now();
+
   console.log("New client connected. Total users:", userCount);
 
   wss.clients.forEach((client) => {
@@ -31,12 +61,22 @@ wss.on("connection", (ws) => {
       message = message.toString();
     }
 
-    wss.clients.forEach((client) => {
-      const clientWs = client as CustomWebSocket;
-      if (clientWs !== customWs && client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify({ type: "message", message }));
-      }
-    });
+    if (canSendMessage(customWs)) {
+      wss.clients.forEach((client) => {
+        const clientWs = client as CustomWebSocket;
+        if (clientWs !== customWs && client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({ type: "message", message }));
+        }
+      });
+    } else {
+      customWs.send(
+        JSON.stringify({
+          type: "error",
+          message:
+            "Rate limit exceeded. Please wait before sending another message.",
+        })
+      );
+    }
   });
 
   ws.on("close", () => {
