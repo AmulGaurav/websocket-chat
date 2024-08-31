@@ -1,7 +1,7 @@
 import express from "express";
 import http from "http";
 
-import WebSocket from "ws";
+import WebSocket, { RawData } from "ws";
 
 const app = express();
 const server = http.createServer(app);
@@ -40,6 +40,34 @@ function canSendMessage(ws: CustomWebSocket): boolean {
   return false;
 }
 
+function parseMessage(data: RawData): string {
+  if (typeof data === "string") {
+    return data;
+  } else if (data instanceof Buffer) {
+    return data.toString("utf-8");
+  } else if (data instanceof ArrayBuffer) {
+    return new TextDecoder().decode(data);
+  } else if (Array.isArray(data)) {
+    return Buffer.concat(data).toString("utf-8");
+  }
+
+  throw new Error("Unsupported message format");
+}
+
+// List of sensitive words to filter
+const sensitiveWords = ["sex", "asshole", "bc", "mc", "ass", "fuck"];
+
+function filterSensitiveContent(message: string): string {
+  let filteredMessage = message;
+
+  sensitiveWords.forEach((word) => {
+    const regex = new RegExp(word, "gi");
+    filteredMessage = filteredMessage.replace(regex, "*".repeat(word.length));
+  });
+
+  return filteredMessage;
+}
+
 wss.on("connection", (ws) => {
   userCount++;
   const customWs = ws as CustomWebSocket;
@@ -56,16 +84,15 @@ wss.on("connection", (ws) => {
   });
 
   customWs.on("message", (message) => {
-    if (Buffer.isBuffer(message)) {
-      // @ts-ignore
-      message = message.toString();
-    }
-
     if (canSendMessage(customWs)) {
+      // Filter sensitive content
+      const parsedMessage = parseMessage(message);
+      const filteredMessage = filterSensitiveContent(parsedMessage);
+
       wss.clients.forEach((client) => {
         const clientWs = client as CustomWebSocket;
         if (clientWs !== customWs && client.readyState === WebSocket.OPEN) {
-          client.send(JSON.stringify({ type: "message", message }));
+          client.send(JSON.stringify({ type: "message", filteredMessage }));
         }
       });
     } else {
