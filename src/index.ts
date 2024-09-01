@@ -55,7 +55,23 @@ function parseMessage(data: RawData): string {
 }
 
 // List of sensitive words to filter
-const sensitiveWords = ["sex", "asshole", "bc", "mc", "ass", "fuck"];
+const sensitiveWords = [
+  "sex",
+  "asshole",
+  "bc",
+  "mc",
+  "ass",
+  "fuck",
+  "sax",
+  "sux",
+  "randi",
+  "madarchod",
+  "motherboard",
+  "chutiya",
+  "bhenchod",
+  "bhenkelode",
+  "randi ka bacha",
+];
 
 function filterSensitiveContent(message: string): string {
   let filteredMessage = message;
